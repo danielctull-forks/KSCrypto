@@ -28,6 +28,8 @@
 	CC_SHA1_Final(digest, &_ctx);
 	
     _digest = [[NSData alloc] initWithBytes:digest length:CC_SHA1_DIGEST_LENGTH];
+
+	if (_completionBlock) _completionBlock([self SHA1Digest]);
 }
 
 - (void)dealloc;
@@ -81,9 +83,7 @@
 			}
 			
 			[stream release];
-			
-			if (_completionBlock) _completionBlock([self SHA1Digest]);
-			
+			[self close];
 		}
 		else
 		{
@@ -102,8 +102,6 @@
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection
 {
     [self close];
-	
-	if (_completionBlock) completionBlock([self SHA1Digest]);
 }
 
 - (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
