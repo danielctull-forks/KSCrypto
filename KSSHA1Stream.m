@@ -11,6 +11,8 @@
 
 @implementation KSSHA1Stream
 
+@synthesize SHA1Digest = _digest;
+
 - (id)init;
 {
     if (self = [super init])
@@ -30,6 +32,8 @@
 
 - (void)dealloc;
 {
+	[_completionBlock release];
+	[_failureBlock release];
     [_digest release];
     [super dealloc];
 }
@@ -40,13 +44,78 @@
     return len;
 }
 
-@synthesize SHA1Digest = _digest;
++ (KSSHA1Stream *)SHA1StreamWithURL:(NSURL *)URL
+					completionBlock:(KSSHA1StreamCompletionBlock)completionBlock 
+					   failureBlock:(KSSHA1StreamFailureBlock)failureBlock
+{
+	return [[[self alloc] initWithURL:URL completionBlock:completionBlock failureBlock:failureBlock] autorelease];
+}
+
+- (id)initWithURL:(NSURL *)URL 
+  completionBlock:(KSSHA1StreamCompletionBlock)completionBlock 
+	 failureBlock:(KSSHA1StreamFailureBlock)failureBlock
+{
+    if (self = [self init]) 
+	{
+		_completionBlock = [completionBlock copy];
+		_failureBlock = [failureBlock copy];
+		
+		if ([URL isFileURL]) 
+		{
+			NSInputStream *stream = [[NSInputStream alloc] initWithFileAtPath:[URL path]];
+			[stream open];
+			
+#define READ_BUFFER_SIZE 64*CC_SHA1_BLOCK_BYTES
+			
+			uint8_t buffer[READ_BUFFER_SIZE];
+			
+			while ([stream streamStatus] < NSStreamStatusAtEnd)
+			{
+				NSInteger length = [stream read:buffer maxLength:READ_BUFFER_SIZE];
+				
+				if (length > 0)
+				{
+					NSInteger written = [self write:buffer maxLength:length];
+					OBASSERT(written == length);
+				}
+			}
+			
+			[stream release];
+			
+			if (_completionBlock) _completionBlock([self SHA1Digest]);
+			
+		}
+		else
+		{
+			[NSURLConnection connectionWithRequest:[NSURLRequest requestWithURL:URL] delegate:self];
+		}
+		
+	}
+    return self;
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
+{
+    [self write:[data bytes] maxLength:[data length]];
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection
+{
+    [self close];
+	
+	if (_completionBlock) completionBlock([self SHA1Digest]);
+}
+
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
+{
+    _digest = [[NSData alloc] init];
+	
+	if (_failureBlock) failureBlock(error);
+}
 
 @end
 
-
 #pragma mark -
-
 
 @implementation NSData (KSSHA1Stream)
 
@@ -79,88 +148,6 @@
 	return [[[NSString alloc] initWithBytes:(const char *)digestString
                                      length:2 * CC_SHA1_DIGEST_LENGTH
                                    encoding:NSASCIIStringEncoding] autorelease];
-}
-
-@end
-
-
-#pragma mark -
-
-
-@implementation KSSHA1Stream (KSURLHashing)
-
-+ (NSData *)SHA1DigestOfContentsOfURL:(NSURL *)URL;
-{
-    OBPRECONDITION(URL);
-    KSSHA1Stream *hasher = [[KSSHA1Stream alloc] initWithURL:URL];
-    
-    NSData *result;
-    if ([URL isFileURL])
-    {
-        NSInputStream *stream = [[NSInputStream alloc] initWithFileAtPath:[URL path]];
-        [stream open];
-        
-#define READ_BUFFER_SIZE 64*CC_SHA1_BLOCK_BYTES
-        uint8_t buffer[READ_BUFFER_SIZE];
-        
-        while ([stream streamStatus] < NSStreamStatusAtEnd)
-        {
-            NSInteger length = [stream read:buffer maxLength:READ_BUFFER_SIZE];
-            
-            if (length > 0)
-            {
-                NSInteger written = [hasher write:buffer maxLength:length];
-                OBASSERT(written == length);
-            }
-        }
-        
-        [stream release];
-        
-        [hasher close];
-        result = [hasher SHA1Digest];
-    }
-    else
-    {
-        // Run the runloop until done
-        while (!(result = [hasher SHA1Digest]))
-        {
-            [[NSRunLoop currentRunLoop] runUntilDate:[NSDate distantPast]];
-        }
-        
-        // Finish up. Empty hash means load failed
-        if (![result length]) result = nil;
-    }
-    
-    
-    // Finish up. Empty hash means load failed
-    result = [[result copy] autorelease];
-    [hasher release];
-    return result;
-}
-
-- (id)initWithURL:(NSURL *)URL;
-{
-    [self init];
-    
-    [NSURLConnection connectionWithRequest:[NSURLRequest requestWithURL:URL] 
-                                  delegate:self];
-	
-    return self;
-}
-
-- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
-{
-    [self write:[data bytes] maxLength:[data length]];
-}
-
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
-{
-    [self close];
-}
-
-- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
-{
-    _digest = [[NSData alloc] init];
 }
 
 @end

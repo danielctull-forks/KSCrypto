@@ -9,6 +9,8 @@
 #import <Cocoa/Cocoa.h>
 #import <CommonCrypto/CommonDigest.h>
 
+typedef void (^KSSHA1StreamCompletionBlock) (NSData *SHA1Digest);
+typedef void (^KSSHA1StreamFailureBlock) (NSError *error);
 
 
 @interface KSSHA1Stream : NSOutputStream
@@ -16,18 +18,21 @@
   @private
     CC_SHA1_CTX _ctx;
     NSData      *_digest;
+	KSSHA1StreamCompletionBlock _completionBlock;
+	KSSHA1StreamFailureBlock _failureBlock;
 }
 
 // nil until you call -close
 @property(nonatomic, copy, readonly) NSData *SHA1Digest;
 
++ (KSSHA1Stream *)SHA1StreamWithURL:(NSURL *)URL 
+					completionBlock:(KSSHA1StreamCompletionBlock)completionBlock
+					   failureBlock:(KSSHA1StreamFailureBlock)failureBlock;
+
+- (id)initWithURL:(NSURL *)URL 
+  completionBlock:(KSSHA1StreamCompletionBlock)block
+	 failureBlock:(KSSHA1StreamFailureBlock)failureBlock;
 @end
-
-
-@interface KSSHA1Stream (KSURLHashing)
-+ (NSData *)SHA1DigestOfContentsOfURL:(NSURL *)URL;
-@end
-
 
 #pragma mark -
 
